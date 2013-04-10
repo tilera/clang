@@ -1144,6 +1144,11 @@ Generic_GCC::GCCInstallationDetector::GCCInstallationDetector(
     "ppc64-redhat-linux"
   };
 
+  static const char *const TileGXLibDirs[] = { "/lib" };
+  static const char *const TileGXTriples[] = {
+    "tilegx-redhat-linux"
+  };
+
   switch (TargetTriple.getArch()) {
   case llvm::Triple::aarch64:
     LibDirs.append(AArch64LibDirs, AArch64LibDirs
@@ -1245,6 +1250,17 @@ Generic_GCC::GCCInstallationDetector::GCCInstallationDetector(
       PPCTriples, PPCTriples + llvm::array_lengthof(PPCTriples));
     break;
 
+  case llvm::Triple::tilegx:
+    LibDirs.append(
+      TileGXLibDirs, TileGXLibDirs + llvm::array_lengthof(TileGXLibDirs));
+    TripleAliases.append(
+      TileGXTriples, TileGXTriples + llvm::array_lengthof(TileGXTriples));
+    MultiarchLibDirs.append(
+      TileGXLibDirs, TileGXLibDirs + llvm::array_lengthof(TileGXLibDirs));
+    MultiarchTripleAliases.append(
+      TileGXTriples, TileGXTriples + llvm::array_lengthof(TileGXTriples));
+    break;
+
   default:
     // By default, just rely on the standard lib directories and the original
     // triple.
@@ -1269,7 +1285,8 @@ static bool hasMipsN32ABIArg(const ArgList &Args) {
 static StringRef getTargetMultiarchSuffix(llvm::Triple::ArchType TargetArch,
                                           const ArgList &Args) {
   if (TargetArch == llvm::Triple::x86_64 ||
-      TargetArch == llvm::Triple::ppc64)
+      TargetArch == llvm::Triple::ppc64 ||
+      TargetArch == llvm::Triple::tilegx)
     return "/64";
 
   if (TargetArch == llvm::Triple::mips64 ||

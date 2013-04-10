@@ -1354,6 +1354,34 @@ void Clang::AddHexagonTargetArgs(const ArgList &Args,
   CmdArgs.push_back ("-machine-sink-split=0");
 }
 
+void Clang::AddTileGXTargetArgs(const ArgList &Args,
+                                ArgStringList &CmdArgs) const {
+
+  // Select the float ABI as determined by -msoft-float, -mhard-float, and
+  StringRef FloatABI;
+  if (Arg *A = Args.getLastArg(options::OPT_msoft_float,
+                               options::OPT_mhard_float)) {
+    if (A->getOption().matches(options::OPT_msoft_float))
+      FloatABI = "soft";
+    else if (A->getOption().matches(options::OPT_mhard_float))
+      FloatABI = "hard";
+  }
+
+  // If unspecified, choose the default based on the platform.
+  if (FloatABI.empty()) {
+    switch (getToolChain().getTriple().getOS()) {
+    default:
+      FloatABI = "soft";
+      break;
+    }
+  }
+
+  if (FloatABI == "soft")
+    CmdArgs.push_back("-msoft-float");
+  else
+    CmdArgs.push_back("-mhard-float");
+}
+
 static bool
 shouldUseExceptionTablesForObjCExceptions(const ObjCRuntime &runtime,
                                           const llvm::Triple &Triple) {
@@ -2328,6 +2356,10 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
 
   case llvm::Triple::hexagon:
     AddHexagonTargetArgs(Args, CmdArgs);
+    break;
+
+  case llvm::Triple::tilegx:
+    AddTileGXTargetArgs(Args, CmdArgs);
     break;
   }
 
@@ -5844,6 +5876,8 @@ void gnutools::Link::ConstructJob(Compilation &C, const JobAction &JA,
     else
       CmdArgs.push_back("elf64ltsmip");
   }
+  else if (ToolChain.getArch() == llvm::Triple::tilegx)
+    CmdArgs.push_back("elf64tilegx");
   else
     CmdArgs.push_back("elf_x86_64");
 
@@ -5892,6 +5926,8 @@ void gnutools::Link::ConstructJob(Compilation &C, const JobAction &JA,
       CmdArgs.push_back("/lib/ld.so.1");
     else if (ToolChain.getArch() == llvm::Triple::ppc64)
       CmdArgs.push_back("/lib64/ld64.so.1");
+    else if (ToolChain.getArch() == llvm::Triple::tilegx)
+      CmdArgs.push_back("/lib/ld.so.1");
     else
       CmdArgs.push_back("/lib64/ld-linux-x86-64.so.2");
   }

@@ -156,7 +156,13 @@ public:
     /// __builtin_va_list as defined by ARM AAPCS ABI
     /// http://infocenter.arm.com
     //        /help/topic/com.arm.doc.ihi0042d/IHI0042D_aapcs.pdf
-    AAPCSABIBuiltinVaList
+    AAPCSABIBuiltinVaList,
+
+    /// For tilegx, the VaList should be record type
+    /// which composed of two fields.
+    ///  .val
+    ///  .sp_at_entry
+    TileGXABIBuiltinVaList
   };
 
 protected:

@@ -4844,6 +4844,114 @@ public:
 } // end anonymous namespace.
 
 namespace {
+class TileGXTargetInfo : public TargetInfo {
+  static const TargetInfo::GCCRegAlias GCCRegAliases[];
+  static const char * const GCCRegNames[];
+  bool SoftFloat;
+public:
+  TileGXTargetInfo(const std::string& triple) : TargetInfo(triple) {
+    DescriptionString = "e-p:64:64:64-i1:8:8-i8:8:32-i16:16:32-i32:32:32-"
+                        "i64:64:64-f32:32:32-f64:64:64-v64:64:64-n32";
+    LongWidth = LongAlign = 64;
+    PointerWidth = PointerAlign = 64;
+  }
+  virtual bool setFeatureEnabled(llvm::StringMap<bool> &Features,
+                                 StringRef Name,
+                                 bool Enabled) const {
+    if (Name == "soft-float")
+      Features[Name] = Enabled;
+    else
+      return false;
+
+    return true;
+  }
+  virtual void HandleTargetFeatures(std::vector<std::string> &Features) {
+    SoftFloat = false;
+    for (unsigned i = 0, e = Features.size(); i != e; ++i)
+      if (Features[i] == "+soft-float")
+        SoftFloat = true;
+  }
+  virtual void getTargetDefines(const LangOptions &Opts,
+                                MacroBuilder &Builder) const {
+    DefineStd(Builder, "tilegx", Opts);
+    Builder.defineMacro("__tile", "1");
+    Builder.defineMacro("__tile__", "1");
+    Builder.defineMacro("__tile_chip__", "10");
+    Builder.defineMacro("__tile_chip_rev__", "0");
+    Builder.defineMacro("__REGISTER_PREFIX__", "");
+    Builder.defineMacro("__LITTLE_ENDIAN__");
+
+    if (SoftFloat)
+      Builder.defineMacro("__tilegx_soft_float__", "1");
+  }
+  
+  virtual bool hasFeature(StringRef Feature) const {
+    return llvm::StringSwitch<bool>(Feature)
+             .Case("softfloat", SoftFloat)
+             .Case("tilegx", true)
+             .Default(false);
+  }
+  
+  virtual void getTargetBuiltins(const Builtin::Info *&Records,
+                                 unsigned &NumRecords) const {
+    // FIXME: TileGX Builtins should be implemented here
+  }
+
+  virtual BuiltinVaListKind getBuiltinVaListKind() const {
+    return TargetInfo::TileGXABIBuiltinVaList;
+  }
+
+  int getEHDataRegisterNumber(unsigned RegNo) const {
+    if (RegNo == 0) return 12;
+    if (RegNo == 1) return 13;
+    return -1;
+  }
+
+  virtual void getGCCRegNames(const char * const *&Names,
+                              unsigned &NumNames) const;
+  virtual void getGCCRegAliases(const GCCRegAlias *&Aliases,
+                                unsigned &NumAliases) const;
+  virtual bool validateAsmConstraint(const char *&Name,
+                                     TargetInfo::ConstraintInfo &info) const {
+    // FIXME: Implement!
+    return false;
+  }
+  virtual const char *getClobbers() const {
+    // FIXME: Implement!
+    return "";
+  }
+};
+
+const char * const TileGXTargetInfo::GCCRegNames[] = {
+  "r0", "r1", "r2", "r3", "r4", "r5", "r6", "r7",
+  "r8", "r9", "r10", "r11", "r12", "r13", "r14", "r15",
+  "r16", "r17", "r18", "r19", "r20", "r21", "r22", "r23",
+  "r24", "r25", "r26", "r27", "r28", "r29", "r30", "r31",
+  "r32", "r33", "r34", "r35", "r36", "r37", "r38", "r39",
+  "r40", "r41", "r42", "r43", "r44", "r45", "r46", "r47",
+  "r48", "r49", "r50", "r51", "r52", "r53", "r54", "r55"
+};
+
+void TileGXTargetInfo::getGCCRegNames(const char * const *&Names,
+                                      unsigned &NumNames) const {
+  Names = GCCRegNames;
+  NumNames = llvm::array_lengthof(GCCRegNames);
+}
+
+const TargetInfo::GCCRegAlias TileGXTargetInfo::GCCRegAliases[] = {
+  { { "tp" }, "r53" },
+  { { "sp" }, "r54" },
+  { { "lr" }, "r55" },
+};
+
+void TileGXTargetInfo::getGCCRegAliases(const GCCRegAlias *&Aliases,
+                                        unsigned &NumAliases) const {
+  Aliases = GCCRegAliases;
+  NumAliases = llvm::array_lengthof(GCCRegAliases);
+}
+} // end anonymous namespace.
+
+namespace {
 class PNaClTargetInfo : public TargetInfo {
 public:
   PNaClTargetInfo(const std::string& triple) : TargetInfo(triple) {
@@ -5021,6 +5129,9 @@ static TargetInfo *AllocateTarget(const std::string &T) {
 
   case llvm::Triple::hexagon:
     return new HexagonTargetInfo(T);
+
+  case llvm::Triple::tilegx:
+    return new LinuxTargetInfo<TileGXTargetInfo>(T);
 
   case llvm::Triple::aarch64:
     switch (os) {
