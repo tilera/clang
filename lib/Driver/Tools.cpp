@@ -1371,15 +1371,17 @@ void Clang::AddTileGXTargetArgs(const ArgList &Args,
   if (FloatABI.empty()) {
     switch (getToolChain().getTriple().getOS()) {
     default:
-      FloatABI = "soft";
+      FloatABI = "hard";
       break;
     }
   }
 
   if (FloatABI == "soft")
     CmdArgs.push_back("-msoft-float");
-  else
-    CmdArgs.push_back("-mhard-float");
+  else {
+    CmdArgs.push_back("-mfloat-abi");
+    CmdArgs.push_back("hard");
+  }
 }
 
 static bool
