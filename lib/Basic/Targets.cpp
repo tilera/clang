@@ -4845,6 +4845,7 @@ public:
 
 namespace {
 class TileGXTargetInfo : public TargetInfo {
+  static const Builtin::Info BuiltinInfo[];
   static const TargetInfo::GCCRegAlias GCCRegAliases[];
   static const char * const GCCRegNames[];
   bool SoftFloat;
@@ -4894,7 +4895,8 @@ public:
   
   virtual void getTargetBuiltins(const Builtin::Info *&Records,
                                  unsigned &NumRecords) const {
-    // FIXME: TileGX Builtins should be implemented here
+    Records = BuiltinInfo;
+    NumRecords = clang::Tile::LastTSBuiltin - Builtin::FirstTSBuiltin;
   }
 
   virtual BuiltinVaListKind getBuiltinVaListKind() const {
@@ -4949,6 +4951,13 @@ void TileGXTargetInfo::getGCCRegAliases(const GCCRegAlias *&Aliases,
   Aliases = GCCRegAliases;
   NumAliases = llvm::array_lengthof(GCCRegAliases);
 }
+
+const Builtin::Info TileGXTargetInfo::BuiltinInfo[] = {
+#define BUILTIN(ID, TYPE, ATTRS) { #ID, TYPE, ATTRS, 0, ALL_LANGUAGES },
+#define LIBBUILTIN(ID, TYPE, ATTRS, HEADER) { #ID, TYPE, ATTRS, HEADER,\
+                                              ALL_LANGUAGES },
+#include "clang/Basic/BuiltinsTile.def"
+};
 } // end anonymous namespace.
 
 namespace {
