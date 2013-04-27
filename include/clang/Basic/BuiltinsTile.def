@@ -117,4 +117,8 @@ BUILTIN(__builtin_tilegx_v4shrs, "LiLiLi", "n")
 BUILTIN(__builtin_tilegx_v4shru, "LiLiLi", "n")
 BUILTIN(__builtin_tilegx_v4sub, "LiLiLi", "n")
 BUILTIN(__builtin_tilegx_v4subsc, "LiLiLi", "n")
+
+// Others
+BUILTIN(__builtin_tilegx_mfspr, "LiLi", "n")
+BUILTIN(__builtin_tilegx_mtspr, "vLiLi", "n")
 #undef BUILTIN
