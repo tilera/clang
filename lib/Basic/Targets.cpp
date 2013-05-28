@@ -4874,9 +4874,10 @@ public:
   }
   virtual void getTargetDefines(const LangOptions &Opts,
                                 MacroBuilder &Builder) const {
-    DefineStd(Builder, "tilegx", Opts);
     Builder.defineMacro("__tile", "1");
     Builder.defineMacro("__tile__", "1");
+    Builder.defineMacro("__tilegx", "1");
+    Builder.defineMacro("__tilegx__", "1");
     Builder.defineMacro("__tile_chip__", "10");
     Builder.defineMacro("__tile_chip_rev__", "0");
     Builder.defineMacro("__REGISTER_PREFIX__", "");
