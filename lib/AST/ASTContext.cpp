@@ -5926,28 +5926,13 @@ CreateTileGXABIBuiltinVaListDecl(const ASTContext *Context) {
   Context->VaListTagTy = VaListTagType;
 
   // } __va_list_tag;
-  TypedefDecl *VaListTagTypedefDecl
-    = TypedefDecl::Create(const_cast<ASTContext &>(*Context),
-                          Context->getTranslationUnitDecl(),
-                          SourceLocation(), SourceLocation(),
-                          &Context->Idents.get("__va_list_tag"),
-                          Context->getTrivialTypeSourceInfo(VaListTagType));
-  QualType VaListTagTypedefType =
-    Context->getTypedefType(VaListTagTypedefDecl);
-
-  // typedef __va_list_tag __builtin_va_list[1];
-  llvm::APInt Size(Context->getTypeSize(Context->getSizeType()), 1);
-  QualType VaListTagArrayType
-    = Context->getConstantArrayType(VaListTagTypedefType,
-                                      Size, ArrayType::Normal,0);
-  TypeSourceInfo *TInfo
-    = Context->getTrivialTypeSourceInfo(VaListTagArrayType);
+  
   TypedefDecl *VaListTypedefDecl
     = TypedefDecl::Create(const_cast<ASTContext &>(*Context),
                           Context->getTranslationUnitDecl(),
                           SourceLocation(), SourceLocation(),
                           &Context->Idents.get("__builtin_va_list"),
-                          TInfo);
+                          Context->getTrivialTypeSourceInfo(VaListTagType));
 
   return VaListTypedefDecl;
 }
