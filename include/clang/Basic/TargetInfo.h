@@ -167,6 +167,12 @@ public:
     //     void *__reg_save_area;
     //   } va_list[1];
     SystemZBuiltinVaList
+
+    /// For tilegx, the VaList should be record type
+    /// which composed of two fields.
+    ///  .val
+    ///  .sp_at_entry
+    TileGXABIBuiltinVaList
   };
 
 protected:

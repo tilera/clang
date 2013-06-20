@@ -5085,6 +5085,261 @@ llvm::Value *HexagonABIInfo::EmitVAArg(llvm::Value *VAListAddr, QualType Ty,
   return AddrTyped;
 }
 
+//===----------------------------------------------------------------------===//
+// TileGX ABI Implementation
+//===----------------------------------------------------------------------===//
+
+namespace {
+
+class TileGXABIInfo : public ABIInfo {
+
+  void CoerceToIntArgs(uint64_t TySize,
+                       SmallVector<llvm::Type*, 10> &ArgList) const;
+  llvm::Type *HandleAggregates(QualType Ty, uint64_t TySize) const;
+  llvm::Type *getPaddingType(uint64_t Align, uint64_t Offset) const;
+  llvm::Type *returnAggregateInRegs(QualType RetTy, uint64_t Size) const;
+public:
+  TileGXABIInfo(CodeGenTypes &CGT) : ABIInfo(CGT) {}
+  ABIArgInfo classifyReturnType(QualType RetTy) const;
+  ABIArgInfo classifyArgumentType(QualType RetTy, uint64_t &Offset) const;
+
+  virtual void computeInfo(CGFunctionInfo &FI) const;
+
+  virtual llvm::Value *EmitVAArg(llvm::Value *VAListAddr, QualType Ty,
+                                 CodeGenFunction &CGF) const;
+};
+
+class TileGXTargetCodeGenInfo : public TargetCodeGenInfo {
+public:
+  TileGXTargetCodeGenInfo(CodeGenTypes &CGT)
+    :TargetCodeGenInfo(new TileGXABIInfo(CGT)) {}
+
+  int getDwarfEHStackPointer(CodeGen::CodeGenModule &M) const {
+    return 54;
+  }
+};
+
+}
+
+llvm::Type*
+TileGXABIInfo::HandleAggregates(QualType Ty, uint64_t TySize) const {
+  SmallVector<llvm::Type*, 10> ArgList, IntArgList;
+
+  if (Ty->isComplexType())
+    return CGT.ConvertType(Ty);
+
+  const RecordType *RT = Ty->getAs<RecordType>();
+
+  // Unions/vectors are passed in integer registers.
+  if (!RT || !RT->isStructureOrClassType()) {
+    CoerceToIntArgs(TySize, ArgList);
+    return llvm::StructType::get(getVMContext(), ArgList);
+  }
+
+  const RecordDecl *RD = RT->getDecl();
+  const ASTRecordLayout &Layout = getContext().getASTRecordLayout(RD);
+  assert(!(TySize % 8) && "Size of structure must be multiple of 8.");
+  
+  uint64_t LastOffset = 0;
+  unsigned idx = 0;
+  llvm::IntegerType *I64 = llvm::IntegerType::get(getVMContext(), 64);
+
+  // Iterate over fields in the struct/class and check if there are any aligned
+  // double fields.
+  for (RecordDecl::field_iterator i = RD->field_begin(), e = RD->field_end();
+       i != e; ++i, ++idx) {
+    const QualType Ty = i->getType();
+    const BuiltinType *BT = Ty->getAs<BuiltinType>();
+
+    if (!BT || BT->getKind() != BuiltinType::Double)
+      continue;
+
+    uint64_t Offset = Layout.getFieldOffset(idx);
+    if (Offset % 64) // Ignore doubles that are not aligned.
+      continue;
+
+    // Add ((Offset - LastOffset) / 64) args of type i64.
+    for (unsigned j = (Offset - LastOffset) / 64; j > 0; --j)
+      ArgList.push_back(I64);
+
+    // Add double type.
+    ArgList.push_back(llvm::Type::getDoubleTy(getVMContext()));
+    LastOffset = Offset + 64;
+  }
+
+  CoerceToIntArgs(TySize - LastOffset, IntArgList);
+  ArgList.append(IntArgList.begin(), IntArgList.end());
+
+  return llvm::StructType::get(getVMContext(), ArgList);
+}
+
+llvm::Type *
+TileGXABIInfo::getPaddingType(uint64_t Align, uint64_t Offset) const {
+  assert((Offset % 8) == 0);
+
+  if ((Align - 1) & Offset)
+    return llvm::IntegerType::get(getVMContext(), 64);
+
+  return 0;
+}
+
+
+void
+TileGXABIInfo::CoerceToIntArgs(uint64_t TySize,
+                               SmallVector<llvm::Type*, 10> &ArgList) const {
+  llvm::IntegerType *IntTy =
+    llvm::IntegerType::get(getVMContext(), 64);
+
+  // Add (TySize / MinABIStackAlignInBytes) args of IntTy.
+  for (unsigned N = TySize / 64; N; --N)
+    ArgList.push_back(IntTy);
+
+  // If necessary, add one more integer type to ArgList.
+  unsigned R = TySize % 64;
+
+  if (R)
+    ArgList.push_back(llvm::IntegerType::get(getVMContext(), R));
+}
+
+
+llvm::Type*
+TileGXABIInfo::returnAggregateInRegs(QualType RetTy, uint64_t Size) const {
+  const RecordType *RT = RetTy->getAs<RecordType>();
+  SmallVector<llvm::Type*, 10> RTList;
+
+  if (RT && RT->isStructureOrClassType()) {
+    const RecordDecl *RD = RT->getDecl();
+    const ASTRecordLayout &Layout = getContext().getASTRecordLayout(RD);
+    unsigned FieldCnt = Layout.getFieldCount();
+
+    if (FieldCnt && (FieldCnt <= 2) && !Layout.getFieldOffset(0)) {
+      RecordDecl::field_iterator b = RD->field_begin(), e = RD->field_end();
+      for (; b != e; ++b) {
+        const BuiltinType *BT = b->getType()->getAs<BuiltinType>();
+
+        if (!BT || !BT->isFloatingPoint())
+          break;
+
+        RTList.push_back(CGT.ConvertType(b->getType()));
+      }
+
+      if (b == e)
+        return llvm::StructType::get(getVMContext(), RTList,
+                                     RD->hasAttr<PackedAttr>());
+
+      RTList.clear();
+    }
+  }
+
+  CoerceToIntArgs(Size, RTList);
+  return llvm::StructType::get(getVMContext(), RTList);
+}
+
+ABIArgInfo
+TileGXABIInfo::classifyArgumentType(QualType Ty, uint64_t &Offset) const {
+  uint64_t OrigOffset = Offset;
+  uint64_t TySize = getContext().getTypeSize(Ty);
+  uint64_t Align = getContext().getTypeAlign(Ty) / 8;
+
+  Align = std::max(Align, (uint64_t)8);
+  Offset = llvm::RoundUpToAlignment(Offset, Align);
+  Offset += llvm::RoundUpToAlignment(TySize, Align * 8) / 8;
+
+  if (isAggregateTypeForABI(Ty) || Ty->isVectorType()) {
+    // Ignore empty aggregates.
+    if (TySize == 0)
+      return ABIArgInfo::getIgnore();
+
+    // Records with non trivial destructors/constructors should not be passed
+    // by value.
+    if (isRecordWithNonTrivialDestructorOrCopyConstructor(Ty)) {
+      Offset = OrigOffset + 8;
+      return ABIArgInfo::getIndirect(0, /*ByVal=*/false);
+    }
+
+    // If we have reached here, aggregates are passed directly by coercing to
+    // another structure type. Padding is inserted if the offset of the
+    // aggregate is unaligned.
+    return ABIArgInfo::getDirect(HandleAggregates(Ty, TySize), 0,
+                                 getPaddingType(Align, OrigOffset));
+  }
+
+  // Treat an enum type as its underlying type.
+  if (const EnumType *EnumTy = Ty->getAs<EnumType>())
+    Ty = EnumTy->getDecl()->getIntegerType();
+
+  if (Ty->isPromotableIntegerType())
+    return ABIArgInfo::getExtend();
+
+  return ABIArgInfo::getDirect(0, 0, getPaddingType(Align, OrigOffset));
+
+}
+
+ABIArgInfo
+TileGXABIInfo::classifyReturnType(QualType RetTy) const {
+  uint64_t Size = getContext().getTypeSize(RetTy);
+
+  if (RetTy->isVoidType() || Size == 0)
+    return ABIArgInfo::getIgnore();
+
+  if (isAggregateTypeForABI(RetTy) || RetTy->isVectorType()) {
+    if (Size <= (10 * 64)) {
+      if (RetTy->isAnyComplexType())
+        return ABIArgInfo::getDirect();
+
+      if (!isRecordWithNonTrivialDestructorOrCopyConstructor(RetTy))
+        return ABIArgInfo::getDirect(returnAggregateInRegs(RetTy, Size));
+    }
+
+    return ABIArgInfo::getIndirect(0);
+  }
+
+  // Treat an enum type as its underlying type.
+  if (const EnumType *EnumTy = RetTy->getAs<EnumType>())
+    RetTy = EnumTy->getDecl()->getIntegerType();
+
+  return (RetTy->isPromotableIntegerType() ?
+          ABIArgInfo::getExtend() : ABIArgInfo::getDirect());
+}
+
+llvm::Value *
+TileGXABIInfo::EmitVAArg(llvm::Value *VAListAddr, QualType Ty,
+                         CodeGenFunction &CGF) const {
+
+  if (!isAggregateTypeForABI(Ty))
+    return 0;
+
+  // FIXME: Need to handle alignment
+  llvm::Type *BPP = CGF.Int8PtrPtrTy;
+
+  CGBuilderTy &Builder = CGF.Builder;
+  llvm::Value *VAListAddrAsBPP = Builder.CreateBitCast(VAListAddr, BPP,
+                                                       "ap");
+  llvm::Value *Addr = Builder.CreateLoad(VAListAddrAsBPP, "ap.cur");
+  llvm::Type *PTy =
+    llvm::PointerType::getUnqual(CGF.ConvertType(Ty));
+  llvm::Value *AddrTyped = Builder.CreateBitCast(Addr, PTy);
+
+  uint64_t Offset =
+    llvm::RoundUpToAlignment(CGF.getContext().getTypeSize(Ty) / 8, 8);
+  llvm::Value *NextAddr =
+    Builder.CreateGEP(Addr, llvm::ConstantInt::get(CGF.Int64Ty, Offset),
+                      "ap.next");
+  Builder.CreateStore(NextAddr, VAListAddrAsBPP);
+
+  return AddrTyped;
+}
+
+void
+TileGXABIInfo::computeInfo(CGFunctionInfo &FI) const {
+  ABIArgInfo &RetInfo = FI.getReturnInfo();
+  RetInfo = classifyReturnType(FI.getReturnType());
+
+  uint64_t Offset = RetInfo.isIndirect() ? 8 : 0;
+  for (CGFunctionInfo::arg_iterator it = FI.arg_begin(), ie = FI.arg_end();
+       it != ie; ++it)
+    it->info = classifyArgumentType(it->type, Offset);
+}
 
 const TargetCodeGenInfo &CodeGenModule::getTargetCodeGenInfo() {
   if (TheTargetCodeGenInfo)
@@ -5201,5 +5456,8 @@ const TargetCodeGenInfo &CodeGenModule::getTargetCodeGenInfo() {
   }
   case llvm::Triple::hexagon:
     return *(TheTargetCodeGenInfo = new HexagonTargetCodeGenInfo(Types));
+
+  case llvm::Triple::tilegx:
+    return *(TheTargetCodeGenInfo = new TileGXTargetCodeGenInfo(Types));
   }
 }

@@ -1155,6 +1155,11 @@ Generic_GCC::GCCInstallationDetector::GCCInstallationDetector(
     "s390x-redhat-linux"
   };
 
+  static const char *const TileGXLibDirs[] = { "/lib" };
+  static const char *const TileGXTriples[] = {
+    "tilegx-redhat-linux"
+  };
+
   switch (TargetTriple.getArch()) {
   case llvm::Triple::aarch64:
     LibDirs.append(AArch64LibDirs, AArch64LibDirs
@@ -1262,6 +1267,17 @@ Generic_GCC::GCCInstallationDetector::GCCInstallationDetector(
       SystemZTriples, SystemZTriples + llvm::array_lengthof(SystemZTriples));
     break;
 
+  case llvm::Triple::tilegx:
+    LibDirs.append(
+      TileGXLibDirs, TileGXLibDirs + llvm::array_lengthof(TileGXLibDirs));
+    TripleAliases.append(
+      TileGXTriples, TileGXTriples + llvm::array_lengthof(TileGXTriples));
+    MultiarchLibDirs.append(
+      TileGXLibDirs, TileGXLibDirs + llvm::array_lengthof(TileGXLibDirs));
+    MultiarchTripleAliases.append(
+      TileGXTriples, TileGXTriples + llvm::array_lengthof(TileGXTriples));
+    break;
+
   default:
     // By default, just rely on the standard lib directories and the original
     // triple.
@@ -1365,7 +1381,8 @@ static bool findTargetMultiarchSuffix(std::string &Suffix,
 
   if (TargetArch == llvm::Triple::x86_64 ||
       TargetArch == llvm::Triple::ppc64 ||
-      TargetArch == llvm::Triple::systemz)
+      TargetArch == llvm::Triple::systemz ||
+      TargetArch == llvm::Triple::tilegx)
     Suffix = "/64";
   else
     Suffix = "/32";
