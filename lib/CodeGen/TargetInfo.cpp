@@ -5252,9 +5252,9 @@ TileGXABIInfo::classifyArgumentType(QualType Ty, uint64_t &Offset) const {
 
     // Records with non trivial destructors/constructors should not be passed
     // by value.
-    if (isRecordWithNonTrivialDestructorOrCopyConstructor(Ty)) {
+    if (CGCXXABI::RecordArgABI RAA = getRecordArgABI(Ty, CGT)) {
       Offset = OrigOffset + 8;
-      return ABIArgInfo::getIndirect(0, /*ByVal=*/false);
+      return ABIArgInfo::getIndirect(0, RAA == CGCXXABI::RAA_DirectInMemory);
     }
 
     // If we have reached here, aggregates are passed directly by coercing to
@@ -5287,7 +5287,7 @@ TileGXABIInfo::classifyReturnType(QualType RetTy) const {
       if (RetTy->isAnyComplexType())
         return ABIArgInfo::getDirect();
 
-      if (!isRecordWithNonTrivialDestructorOrCopyConstructor(RetTy))
+      if (RetTy->isVectorType())
         return ABIArgInfo::getDirect(returnAggregateInRegs(RetTy, Size));
     }
 

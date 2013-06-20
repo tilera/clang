@@ -166,7 +166,7 @@ public:
     //     void *__overflow_arg_area;
     //     void *__reg_save_area;
     //   } va_list[1];
-    SystemZBuiltinVaList
+    SystemZBuiltinVaList,
 
     /// For tilegx, the VaList should be record type
     /// which composed of two fields.
